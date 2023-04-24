@@ -1,0 +1,267 @@
+```{r}
+library(dplyr) #use group_by(), distinct(), left_join(), filter(), select(), count()
+library(tidyr) #use drop_na(), spread()
+#library(tidyverse)
+library(ggplot2) #use ggplot()+... , ggsave()
+library(lubridate) #use strptime(), ddays()
+#library(PerformanceAnalytics)
+#library(readxl)
+library(rstudioapi) #use rsudio api
+library(xlsx) #use read.xlsx2
+#library(stringr)
+#library(readr)
+library(scales) #use label_comma()
+
+setwd(dirname(rstudioapi::getActiveDocumentContext()$path))
+Sys.setlocale("LC_CTYPE", "English_United States.1258")
+Sys.setlocale("LC_ALL", "English_United States.1258")
+
+file1 <- read.xlsx2("D:/Document/HCMUT/CTRR/BTL/Bai lam/DataInput/CO1007_TV_HK192-Quiz 5.1-điểm.xlsx", sheetIndex = 1, header = TRUE)
+file2 <- read.xlsx2("D:/Document/HCMUT/CTRR/BTL/Bai lam/DataInput/CO1007_TV_HK192-Quiz 6.1-điểm.xlsx", sheetIndex = 1, header = TRUE)
+file3 <- read.xlsx2("D:/Document/HCMUT/CTRR/BTL/Bai lam/DataInput/CO1007_TV_HK192-Quiz 6.2-điểm.xlsx", sheetIndex = 1, header = TRUE)
+file4 <- read.xlsx2("D:/Document/HCMUT/CTRR/BTL/Bai lam/DataInput/CO1007_TV_HK192-Quiz 7.1-điểm.xlsx", sheetIndex = 1, header = TRUE)
+aaa <- c("uid","Tinh_trang","Bat_dau","Hoan_thanh","Thuc_hien","Diem","Q1","Q2","Q3","Q4","Q5","Q6","Q7","Q8","Q9","Q10")
+
+
+
+convert.input.data <- function(file.input)
+{
+  for(i in 1:ncol(file.input))
+  {
+    names(file.input)[i] <- aaa[i]
+  }
+  file.input$uid<-as.numeric(gsub(",",".",file.input$uid))
+  file.input$Diem<-as.numeric(gsub(",",".",file.input$Diem))
+  file.input$Q1<-as.numeric(gsub(",",".",file.input$Q1))
+  file.input$Q2<-as.numeric(gsub(",",".",file.input$Q2))
+  file.input$Q3<-as.numeric(gsub(",",".",file.input$Q3))
+  file.input$Q4<-as.numeric(gsub(",",".",file.input$Q4))
+  file.input$Q5<-as.numeric(gsub(",",".",file.input$Q5))
+  file.input$Q6<-as.numeric(gsub(",",".",file.input$Q6))
+  file.input$Q7<-as.numeric(gsub(",",".",file.input$Q7))
+  file.input$Q8<-as.numeric(gsub(",",".",file.input$Q8))
+  file.input$Q9<-as.numeric(gsub(",",".",file.input$Q9))
+  file.input$Q10<-as.numeric(gsub(",",".",file.input$Q10))
+  for(i in 6:16)
+  {
+    for(j in 1:nrow(file.input))
+    {
+      if (is.na(file.input[j,i])) file.input[j,i] =0
+    }
+  }
+  
+  file.input <- file.input %>%
+    drop_na(uid)
+}
+
+
+
+#Xử lý các file input
+file1 <- convert.input.data(file1)
+file2 <- convert.input.data(file2)
+file3 <- convert.input.data(file3)
+file4 <- convert.input.data(file4)
+
+
+
+cau7a <- function(df7a)
+{
+  #7.a.Hãy xác định thời điểm t2 phù hợp.
+  #Tiêu chí chọn thời điểm t2 = thời gian hoàn thành bài làm lần cuối của sinh viên nộp bài cuối cùng - 3 ngày
+  #Ví dụ: trong file đang xử lý có thời gian nộp bài lần cuối của sinh viên nộp bài cuối cùng là "18 May 2020  10:47 PM"
+  #Nên ta có t2 = ("18 May 2020  10:47 PM") - 3 ngày = "15 May 2020  10:47 PM"
+  #Theo tiêu chí trên, nếu sinh viên nào có nộp bài lần đầu sau thời điểm t2 = "15 May 2020  10:47 PM" sẽ bị xem như học đối phó
+  df7a.input.data <- df7a
+  list.submit.7a <- df7a.input.data
+  list.submit.7a <- list.submit.7a[order(strptime(list.submit.7a$Hoan_thanh, "%d %B %Y %I:%M %p"), na.last = TRUE), ]
+  list.submit.7a <- list.submit.7a[list.submit.7a$Hoan_thanh != "-", ]
+  t2 <- strptime(list.submit.7a[nrow(list.submit.7a), "Hoan_thanh"], "%d %B %Y %I:%M %p") - ddays(3)
+  return(t2)
+}
+
+
+
+ds.sv.doi.pho <- function(df7dp)
+{
+  #Xác định lần nộp bài đầu tiên của tất cả sinh viên
+  df7dp.input.data <- df7dp
+  t2dp <- cau7a(df7dp.input.data)
+  first.submit <- df7dp.input.data
+  
+  for(i in 1:nrow(first.submit))
+  {
+    if (first.submit[i,"Hoan_thanh"] == "-")
+    {
+      first.submit[i,"Hoan_thanh"] <- first.submit[i,"Bat_dau"]
+    }
+  }
+  first.submit <- first.submit %>% group_by(.,uid) %>% arrange(., strptime(Hoan_thanh, "%d %B %Y %I:%M %p"), .by_group = TRUE) %>% distinct(., uid, .keep_all = TRUE) %>% ungroup()
+  #Xác định các sinh viên có lần nộp bài đầu tiên sau thời điểm t2
+  first.submit.after.t2 <- first.submit %>% filter(., strptime(Hoan_thanh, "%d %B %Y %I:%M %p") > t2dp) %>% arrange(., strptime(Hoan_thanh, "%d %B %Y %I:%M %p"))
+  return(first.submit.after.t2)
+}
+
+
+
+cau7b <- function(df7b)
+{
+  #7.b.Xác định số lượng sinh viên học đối phó
+  #Sinh viên mà không có thời gian hoàn thành bài làm lần đầu tiên thì vẫn tính là có lần nộp bài(điểm 0).
+  #Xác định số lượng sinh viên học đối phó
+  df7b.input.data <- df7b
+  first.submit.after.t2 <- ds.sv.doi.pho(df7b.input.data)
+  num.SVDP <- nrow(first.submit.after.t2)
+  return(num.SVDP)
+}
+
+
+
+tao.bang.tan.so.raw <- function(df7craww)
+{
+  #Bảng tần số không đầy đủ (không chứa các giá trị có tần số bằng 0)
+  #c1. Thu thập số liệu (đếm số lượng mỗi loại điểm)
+  df7c.input.data.raww <- df7craww
+  submit.after.t2 <- ds.sv.doi.pho(df7c.input.data.raww)
+  frequency.table.7c.raww <- submit.after.t2[,"uid"]
+  frequency.table.7c.raww <- frequency.table.7c.raww %>% left_join(., df7c.input.data.raww, by = "uid") %>% select(.,c("uid", "Diem")) %>% count(., Diem)
+  names(frequency.table.7c.raww)[2] <- "SL"
+  return(frequency.table.7c.raww)
+}
+
+
+
+tao.bang.tan.so.full <- function(input.from.tao.bang.tan.so.raw)
+{
+  #Bảng tần số đầy đủ
+  #c2. Tạo bảng tần số đầy đủ từ điểm 0 đến 10 (0, 0.5, 1, 1.5 ...10)
+  frequency.table.7c.full <- tao.bang.tan.so.raw(input.from.tao.bang.tan.so.raw)
+  h1 <- data.frame("Diem"=seq(0,10,by=0.5), stringsAsFactors = FALSE)
+  frequency.table.7c.full <- left_join(h1, frequency.table.7c.full, by = "Diem")
+  frequency.table.7c.full[is.na(frequency.table.7c.full)] <- 0
+  return(frequency.table.7c.full)
+}
+
+
+
+total.score.num <- function(input.from.tao.bang.tan.so.full)
+{
+  frequency.table.7c.total <- tao.bang.tan.so.full(input.from.tao.bang.tan.so.full)
+  total.score.num <- sum(frequency.table.7c.total$SL)
+  return(total.score.num)
+}
+
+
+
+bang.tan.so.ctr <- function(df7c.ctr)
+{
+  #Chuyển cột thành dòng, hoàn thiện bảng tần số
+  
+  frequency.table.7c.ctr <- tao.bang.tan.so.full(df7c.ctr) %>% spread(., Diem, SL)
+  row.names(frequency.table.7c.ctr) <- NULL
+  frequency.table.7c.ctr$Diem <- c("SL")
+  frequency.table.7c.ctr$Tong <- total.score.num(df7c.ctr)
+  frequency.table.7c.ctr <- frequency.table.7c.ctr[ , c(22,1:21,23)]
+  return(frequency.table.7c.ctr)
+}
+
+
+
+get.name.data.frame <- function(file)
+{
+  data.frame.name <- deparse(substitute(file))
+  return(data.frame.name)
+}
+
+
+#câu 7c xài các hàm riêng lẻ
+cau7c.func <- function(input.data, name.of.data.frame)
+{
+  pho.diem.data <- tao.bang.tan.so.full(input.data)
+  data.frame.input.name <- name.of.data.frame
+  pho.diem <- ggplot(pho.diem.data, aes(x=factor(Diem), y=SL)) + geom_bar(stat="identity", fill ="#274CBF", colour = "#17202A", aes(col = Diem)) + geom_text(aes(label=SL), vjust=-0.3, size=3.5, color="#000000") + labs(title = "PHỔ ĐIỂM", subtitle = "(SINH VIÊN HỌC ĐỐI PHÓ)", caption = paste("input: ", as.character(data.frame.input.name))) + xlab("Điểm") + ylab("Số lượng") + theme_bw() + theme(axis.text = element_text(colour = "#000080", size = rel(1), face = "bold"), plot.title = element_text(size = rel(3)), panel.border = element_rect(linetype = "solid", fill = NA)) + theme(axis.title = element_text(family = "sans", face = "bold")) + scale_y_continuous(labels = label_comma(accuracy = 1))
+  
+  #theme_bw() dổi màu nền thành đen trắng
+  #theme(legend.position = "none") loại bỏ chú thích cột
+  #geom_bar(stat="identity") không đếm số lượng mỗi loại giá trị của x, thay vào đó là lấy giá trị cột y (cột tần số) với x tương ứng
+  #geom_text(aes(label=SL), vjust=-0.3, size=3.5) hiện số lượng, vị trí, kích thước trên mỗi cột điểm
+  #theme(axis.text = element_text(colour = "red", size = rel(1.0)) thay đổi màu, kích thước chữ của trục x và y
+  #plot.title = element_text(size = rel(2)) thay đổi màu, kích thước chữ của tiêu đề
+  #panel.border = element_rect(linetype = "solid", fill = NA)) điều chỉnh khung viền biểu đồ
+  return(pho.diem)
+}
+
+
+
+#câu 7c không xài hàm riêng lẻ
+cau7c <- function(df7c,name.of.data.frame)
+{
+  #7.c.Xác định phổ điểm của các sinh viên học đối phó.
+  #Bảng tần số
+  #c1. Thu thập số liệu (đếm số lượng mỗi loại điểm)
+  data.frame.input.name <- name.of.data.frame
+  df7c.input.data <- df7c
+  submit.after.t2 <- ds.sv.doi.pho(df7c.input.data)
+  frequency.table.7c <- submit.after.t2[,"uid"]
+  frequency.table.7c <- frequency.table.7c %>% left_join(., df7c.input.data, by = "uid") %>% select(.,c("uid", "Diem")) %>% count(., Diem)
+  names(frequency.table.7c)[2] <- "SL"
+  total.score.num <- sum(frequency.table.7c$SL)
+  #c2. Tạo bảng tần số đầy đủ từ điểm 0 đến 10 (0, 0.5, 1, 1.5 ...10)
+  h1 <- data.frame("Diem"=seq(0,10,by=0.5), stringsAsFactors = FALSE)
+  frequency.table.7c <- left_join(h1, frequency.table.7c, by = "Diem")
+  frequency.table.7c[is.na(frequency.table.7c)] <- 0
+  #c3. vẽ biểu đồ phổ điểm
+  h1 <- frequency.table.7c
+  dghk <- ggplot(h1, aes(x=factor(Diem), y=SL)) + geom_bar(stat="identity", fill ="#274CBF", colour = "#17202A", aes(col = Diem)) + geom_text(aes(label=SL), vjust=-0.3, size=3.5, color="#000000") + labs(title = "PHỔ ĐIỂM", subtitle = "(SINH VIÊN HỌC ĐỐI PHÓ)", caption = paste("input: ", as.character(data.frame.input.name))) + xlab("Điểm") + ylab("Số lượng") + theme_bw() + theme(axis.text = element_text(colour = "#000080", size = rel(1), face = "bold"), plot.title = element_text(size = rel(2)), panel.border = element_rect(linetype = "solid", fill = NA)) + theme(axis.title = element_text(family = "sans", face = "bold")) + theme(legend.position = "none") + scale_y_continuous(labels = label_comma(accuracy = 1))
+  #geom_bar(stat="identity") không đếm số lượng mỗi loại giá trị của x, thay vào đó là lấy giá trị cột y (cột tần số) với x tương ứng
+  #geom_text(aes(label=SL), vjust=-0.3, size=3.5) hiện số lượng, vị trí, kích thước trên mỗi cột điểm
+  #theme(axis.text = element_text(colour = "red", size = rel(1.0)) thay đổi màu, kích thước chữ của trục x và y
+  #plot.title = element_text(size = rel(2)) thay đổi màu, kích thước chữ của tiêu đề
+  #panel.border = element_rect(linetype = "solid", fill = NA)) điều chỉnh khung viền biểu đồ
+  #theme(legend.position = "none") loại bỏ chú thích cột
+  return(dghk)
+}
+
+#file1
+x <- file1
+data.frame.name.file1 <- get.name.data.frame(file1)
+sprintf("7.Sinh viên học đối phó là sinh viên có nộp bài lần đầu tiên trễ hơn thời điểm t2.")
+sprintf("a. Thời điểm t2 là: %s", cau7a(x))
+sprintf("b. Số lượng sinh viên học đối phó là: %i", cau7b(x))
+cat("c. Xác định phổ điểm của các sinh viên học đối phó ")
+print(cau7c.func(x, data.frame.name.file1))
+ggsave("cau7c.func.file1.jpg", dpi = 300)
+cat("\n")
+
+#file2
+y <- file2
+data.frame.name.file2 <- get.name.data.frame(file2)
+sprintf("7.Sinh viên học đối phó là sinh viên có nộp bài lần đầu tiên trễ hơn thời điểm t2.")
+sprintf("a. Thời điểm t2 là: %s", cau7a(y))
+sprintf("b. Số lượng sinh viên học đối phó là: %i", cau7b(y))
+sprintf("c. Xác định phổ điểm của các sinh viên học đối phó ")
+print(cau7c.func(y,data.frame.name.file2))
+ggsave("cau7c.func.file2.jpg", dpi = 300)
+cat("\n")
+
+#file3
+z <- file3
+data.frame.name.file3 <- get.name.data.frame(file3)
+sprintf("7.Sinh viên học đối phó là sinh viên có nộp bài lần đầu tiên trễ hơn thời điểm t2.")
+sprintf("a. Thời điểm t2 là: %s", cau7a(z))
+sprintf("b. Số lượng sinh viên học đối phó là: %i", cau7b(z))
+sprintf("c. Xác định phổ điểm của các sinh viên học đối phó ")
+print(cau7c.func(z, data.frame.name.file3))
+ggsave("cau7c.func.file3.jpg", dpi = 300)
+cat("\n")
+
+#file4
+t <- file4
+data.frame.name.file4 <- get.name.data.frame(file4)
+sprintf("7.Sinh viên học đối phó là sinh viên có nộp bài lần đầu tiên trễ hơn thời điểm t2.")
+sprintf("a. Thời điểm t2 là: %s", cau7a(t))
+sprintf("b. Số lượng sinh viên học đối phó là: %i", cau7b(t))
+sprintf("c. Xác định phổ điểm của các sinh viên học đối phó ")
+print(cau7c.func(t, data.frame.name.file4))
+ggsave("cau7c.func.file4.jpg", dpi = 300)
+cat("\n")
+```
